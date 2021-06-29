@@ -13,7 +13,6 @@ from pyrogram import Client, filters
 
 def handle(sock, host, port, message):
     jsn = str(message)
-    print(jsn)
     sock.sendto(bytes(jsn, "utf-8"), (host, port))
 
 options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=', 'version'])

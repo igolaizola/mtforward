@@ -17,6 +17,9 @@ def handle(sock, host, port, message):
 
 options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=', 'version'])
 version = False
+api_id = ''
+api_hash = ''
+session = ''
 addr = ''
 for opt, arg in options:
     if opt == '--id':
@@ -42,7 +45,6 @@ else:
     port = int(s[1])
 
     print(datetime.now().time(), 'mtforward started')
-
 
     @app.on_message(filters.text)
     def onMessage(client, message):

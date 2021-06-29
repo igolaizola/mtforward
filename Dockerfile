@@ -6,6 +6,6 @@ RUN pip3 install pyinstaller
 RUN pyinstaller --onefile /mtforward.py 
 FROM debian
 COPY --from=build /dist/mtforward /
-RUN /mtforward version
+RUN /mtforward --version
 # Default run container without commands
 CMD ["tail" "-f", "/dev/null" ]

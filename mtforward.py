@@ -10,8 +10,16 @@ import socket
 import sys
 from datetime import datetime
 from pyrogram import Client, filters
+from PIL import Image
+import pytesseract
+import os
 
-def handle(sock, addrs, copies, message):
+def handle(sock, addrs, copies, ocr, message):
+    if ocr and hasattr(message, 'photo') and hasattr(message.photo, 'file_id'):
+        path = app.download_media(message.photo.file_id)
+        im = Image.open(path)
+        message.photo.ocr = pytesseract.image_to_string(im)
+        os.remove(path)
     jsn = str(message)
     for a in addrs:
         sock.sendto(bytes(jsn, "utf-8"), (a['host'], a['port']))
@@ -19,13 +27,14 @@ def handle(sock, addrs, copies, message):
         for d in copies[message.chat.id]:
             message.copy(d)
 
-options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=','copy=','version'])
+options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=','copy=','ocr','version'])
 version = False
 api_id = ''
 api_hash = ''
 session = ''
 addr = ''
 copy = ''
+ocr = False
 for opt, arg in options:
     if opt == '--id':
         api_id = arg
@@ -37,6 +46,8 @@ for opt, arg in options:
         addr = arg
     elif opt == '--copy':
         copy = arg
+    elif opt == '--ocr':
+        ocr = True
     elif opt == '--version':
         version = True
 
@@ -69,8 +80,8 @@ else:
 
     print(datetime.now().time(), 'mtforward started')
 
-    @app.on_message(filters.text)
+    @app.on_message()
     def onMessage(client, message):
-        handle(sock, addrs, copies, message)
+        handle(sock, addrs, copies, ocr, message)
 
     app.run()

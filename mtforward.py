@@ -13,6 +13,10 @@ from pyrogram import Client, filters
 from PIL import Image
 import pytesseract
 import os
+import schedule
+import time
+import threading
+from pyrogram.raw import functions
 
 def handle(sock, addrs, copies, ocr, message):
     if ocr and hasattr(message, 'photo') and hasattr(message.photo, 'file_id'):
@@ -27,7 +31,17 @@ def handle(sock, addrs, copies, ocr, message):
         for d in copies[message.chat.id]:
             message.copy(d)
 
-options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=','copy=','ocr','version'])
+def runOnline(stop):
+    while True:
+        if stop():
+            break
+        schedule.run_pending()
+        time.sleep(1)
+
+def jobOnline():
+    app.send(functions.account.UpdateStatus(offline=False))
+
+options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=','copy=','ocr','online','version'])
 version = False
 api_id = ''
 api_hash = ''
@@ -35,6 +49,7 @@ session = ''
 addr = ''
 copy = ''
 ocr = False
+online = False
 for opt, arg in options:
     if opt == '--id':
         api_id = arg
@@ -48,6 +63,8 @@ for opt, arg in options:
         copy = arg
     elif opt == '--ocr':
         ocr = True
+    elif opt == '--online':
+        online = True
     elif opt == '--version':
         version = True
 
@@ -84,4 +101,14 @@ else:
     def onMessage(client, message):
         handle(sock, addrs, copies, ocr, message)
 
+    stop = False
+    if online:
+        schedule.every().hour.at("00:55").do(jobOnline)
+        t = threading.Thread(target=runOnline, args =(lambda : stop, ))
+        t.start()
+        print('auto online thread started')
+
+
     app.run()
+    stop = True
+

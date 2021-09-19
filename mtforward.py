@@ -9,14 +9,18 @@ import getopt
 import socket
 import sys
 from datetime import datetime
+import pyrogram
 from pyrogram import Client, filters
+from pyrogram.raw import functions
+from pyrogram.raw import types
 from PIL import Image
 import pytesseract
 import os
 import schedule
 import time
 import threading
-from pyrogram.raw import functions
+import io
+import math
 
 def handle(sock, addrs, copies, ocr, message):
     if ocr and hasattr(message, 'photo') and hasattr(message.photo, 'file_id'):
@@ -27,27 +31,60 @@ def handle(sock, addrs, copies, ocr, message):
     jsn = str(message)
     for a in addrs:
         sock.sendto(bytes(jsn, "utf-8"), (a['host'], a['port']))
-    if message.chat.id in copies:
+    if hasattr(message, 'chat') and message.chat.id in copies:
         for d in copies[message.chat.id]:
             message.copy(d)
 
-def runOnline(stop):
+def runOnline():
     while True:
-        if stop():
-            break
         schedule.run_pending()
         time.sleep(1)
 
 def jobOnline():
     app.send(functions.account.UpdateStatus(offline=False))
+    
+def getDiff(channel, sock, addrs, copies, ocr):
+    time.sleep(2)
+    u = app.send(functions.contacts.ResolveUsername(username = channel))
+    chann = types.InputChannel(channel_id = u.chats[0].id, access_hash = u.chats[0].access_hash)
+    full = app.send(functions.channels.GetFullChannel(channel=chann))
+    pts = full.full_chat.pts    
+    while True:
+        diff = app.send(functions.updates.GetChannelDifference(channel = chann, filter = types.ChannelMessagesFilterEmpty(), limit = 10, pts=pts))
+        pts = diff.pts
+        if hasattr(diff, 'new_messages'):
+            for m in diff.new_messages:
+                chat = pyrogram.types.Chat(id=m.peer_id.channel_id,username=channel,type='channel')
+                msg = pyrogram.types.Message(message_id=m.id, text=m.message, date=m.date, chat=chat)
 
-options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=','copy=','ocr','online','version'])
+                if ocr and hasattr(m, 'media') and hasattr(m.media, 'photo'):
+                    print(m)
+                    p = m.media.photo
+                    for s in p.sizes:
+                        if s.type == 'm':
+                            size = s.size
+                    limit = pow(2, math.ceil(math.log(size, 2))) * 4
+                    loc = types.InputPhotoFileLocation(id=p.id, access_hash=p.access_hash, file_reference=p.file_reference, thumb_size='i')
+                    file = app.send(functions.upload.GetFile(location=loc, offset=0, limit=limit))
+                    im = Image.open(io.BytesIO(file.bytes))
+                    text = pytesseract.image_to_string(im)
+                    msg.photo = {"ocr": text}
+
+                handle(sock, addrs, copies, ocr, msg)
+        now = datetime.now()
+        if (now.minute == 59 and now.second > 45) or (now.minute == 0 and now.second < 5):
+            time.sleep(0.1)
+        else:
+            time.sleep(5)
+
+options, rest = getopt.getopt(sys.argv[1:], '', ['id=','hash=','session=','addr=','copy=', 'poll=', 'ocr','online','version'])
 version = False
 api_id = ''
 api_hash = ''
 session = ''
 addr = ''
 copy = ''
+poll = ''
 ocr = False
 online = False
 for opt, arg in options:
@@ -61,6 +98,8 @@ for opt, arg in options:
         addr = arg
     elif opt == '--copy':
         copy = arg
+    elif opt == '--poll':
+        poll = arg
     elif opt == '--ocr':
         ocr = True
     elif opt == '--online':
@@ -101,14 +140,17 @@ else:
     def onMessage(client, message):
         handle(sock, addrs, copies, ocr, message)
 
-    stop = False
     if online:
-        schedule.every().hour.at("00:55").do(jobOnline)
-        t = threading.Thread(target=runOnline, args =(lambda : stop, ))
+        schedule.every().minute.at(":45").do(jobOnline)
+        t = threading.Thread(target=runOnline, daemon=True)
         t.start()
         print('auto online thread started')
 
+    if poll != '':
+        for c in poll.split(","):
+            t = threading.Thread(target=getDiff, args=(c, sock, addrs, copies, ocr), daemon=True)
+            t.start()
 
     app.run()
-    stop = True
 
+    
